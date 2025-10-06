@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Translate</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>Live Translate</h1>
+      <p class="tagline">Simultaneous interpretation powered by the OpenAI Realtime API.</p>
+    </header>
+    <section class="controls">
+      <label class="field field--wide" for="apiKey">
+        <span>OpenAI API key</span>
+        <input id="apiKey" type="password" inputmode="text" autocomplete="off" placeholder="sk-..." aria-label="OpenAI API key">
+      </label>
+      <button id="toggle" type="button">Start listening</button>
+      <p id="status" class="status status--inline">Idle</p>
+    </section>
+    <section class="output">
+      <h2>Live transcription</h2>
+      <div id="transcription" class="transcript" role="log" aria-live="polite">Waiting for speech…</div>
+    </section>
+    <section class="output">
+      <h2>Live translation</h2>
+      <div id="translation" class="transcript" role="log" aria-live="polite">Waiting for translation…</div>
+    </section>
+    <footer class="footer">
+      <p>Your API key mints a short-lived token in your browser. No audio or text is stored or sent anywhere else.</p>
+    </footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
