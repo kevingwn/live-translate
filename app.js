@@ -5,12 +5,14 @@ const transcriptionEl = document.querySelector('#transcription');
 const translationEl = document.querySelector('#translation');
 
 const TRANSLATOR_PROMPT = `You are a professional simultaneous interpreter. Listen to the speaker's audio and translate everything into natural, fluent Tranditional Chinese as quickly as possible. Deliver concise sentences and update your transcription continuously as confidence improves.`;
+const AUTO_COMMIT_THRESHOLD_MS = 3000;
 
 let pc = null;
 let dc = null;
 let localStream = null;
 let remoteAudio = null;
 let isRunning = false;
+let autoCommitTimer = null;
 
 const createSegment = (overrides = {}) => ({
   text: '',
@@ -118,6 +120,23 @@ function renderPanel(store, targetEl, placeholder) {
   });
 }
 
+function clearAutoCommitTimer() {
+  if (autoCommitTimer !== null) {
+    window.clearTimeout(autoCommitTimer);
+    autoCommitTimer = null;
+  }
+}
+
+function scheduleAutoCommitTimer() {
+  autoCommitTimer = window.setTimeout(() => {
+    if (window?.console?.debug) {
+      console.debug('input_audio_buffer.commit (auto)');
+    }
+    sendRealtimeEvent({ type: 'input_audio_buffer.commit' });
+    scheduleAutoCommitTimer();
+  }, AUTO_COMMIT_THRESHOLD_MS);
+}
+
 function handleServerEvent(event) {
   let message;
   try {
@@ -145,12 +164,15 @@ function handleServerEvent(event) {
   }
 
   if (type === 'input_audio_buffer.speech_started') {
+    clearAutoCommitTimer();
+    scheduleAutoCommitTimer();
     setStatus('Speech detected…');
     showPanel(panels.transcription);
     return;
   }
 
   if (type === 'input_audio_buffer.speech_stopped') {
+    clearAutoCommitTimer();
     setStatus('Processing…');
     return;
   }
@@ -435,6 +457,7 @@ function cleanupConnections() {
   pc = null;
   localStream = null;
   remoteAudio = null;
+  clearAutoCommitTimer();
 }
 
 function resetUiAfterFailure(message) {
