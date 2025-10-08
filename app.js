@@ -310,7 +310,7 @@ async function startSession() {
                 type: 'server_vad',
                 interrupt_response: false,
                 prefix_padding_ms: 100,
-                prefix_padding_ms: 100,
+                silence_duration_ms: 100,
               }
             }
           },
