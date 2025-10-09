@@ -3,9 +3,34 @@ const toggleBtn = document.querySelector('#toggle');
 const statusEl = document.querySelector('#status');
 const transcriptionEl = document.querySelector('#transcription');
 const translationEl = document.querySelector('#translation');
+const settingsBtn = document.querySelector('#settings');
+const settingsDialog = document.querySelector('#settingsDialog');
+const settingsForm = document.querySelector('#settingsForm');
+const modelSelect = document.querySelector('#modelSelect');
+const transcriptionModelSelect = document.querySelector('#transcriptionModel');
+const instructionText = document.querySelector('#instructionText');
+const turnTypeSelect = document.querySelector('#turnType');
+const prefixPaddingInput = document.querySelector('#prefixPadding');
+const silenceDurationInput = document.querySelector('#silenceDuration');
+const interruptResponseInput = document.querySelector('#interruptResponse');
+const autoCommitInput = document.querySelector('#autoCommit');
 
-const TRANSLATOR_PROMPT = `You are a professional simultaneous interpreter. Listen to the speaker's audio and translate everything into natural, fluent Tranditional Chinese as quickly as possible. Deliver concise sentences and update your transcription continuously as confidence improves.`;
-const AUTO_COMMIT_THRESHOLD_MS = 3000;
+const DEFAULT_INSTRUCTIONS = `You are a professional simultaneous interpreter. Listen to the speaker's audio and translate everything into natural, fluent Traditional Chinese as quickly as possible. Deliver concise sentences and update your transcription continuously as confidence improves.`;
+const DEFAULT_SETTINGS = Object.freeze({
+  model: 'gpt-realtime',
+  transcriptionModel: 'gpt-4o-transcribe',
+  instructions: DEFAULT_INSTRUCTIONS,
+  turnDetection: {
+    type: 'server_vad',
+    interruptResponse: false,
+    prefixPaddingMs: 100,
+    silenceDurationMs: 100,
+  },
+  autoCommitThresholdMs: 3000,
+});
+
+const cloneSettings = (settings) => JSON.parse(JSON.stringify(settings));
+let sessionSettings = cloneSettings(DEFAULT_SETTINGS);
 
 let pc = null;
 let dc = null;
@@ -91,6 +116,135 @@ function setStatus(message) {
   statusEl.textContent = message;
 }
 
+function openSettings() {
+  if (!settingsDialog) return;
+  populateSettingsForm();
+  settingsDialog.hidden = false;
+  document.body.style.overflow = 'hidden';
+  settingsDialog.querySelector('select, textarea, input')?.focus();
+}
+
+function closeSettings() {
+  if (!settingsDialog) return;
+  settingsDialog.hidden = true;
+  document.body.style.overflow = '';
+}
+
+function populateSettingsForm() {
+  if (!settingsForm) return;
+  modelSelect.value = sessionSettings.model;
+  transcriptionModelSelect.value = sessionSettings.transcriptionModel;
+  instructionText.value = sessionSettings.instructions;
+  turnTypeSelect.value = sessionSettings.turnDetection.type;
+  prefixPaddingInput.value = sessionSettings.turnDetection.prefixPaddingMs;
+  silenceDurationInput.value = sessionSettings.turnDetection.silenceDurationMs;
+  interruptResponseInput.checked = Boolean(sessionSettings.turnDetection.interruptResponse);
+  autoCommitInput.value = sessionSettings.autoCommitThresholdMs;
+  updateTurnDetectionFieldState();
+}
+
+function parseNonNegativeInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return fallback;
+}
+
+function updateSessionSettingsFromForm(formData) {
+  const model = formData.get('model') || sessionSettings.model || DEFAULT_SETTINGS.model;
+  const transcriptionModelRaw = formData.get('transcriptionModel');
+  const transcriptionModel =
+    (typeof transcriptionModelRaw === 'string' && transcriptionModelRaw.trim()) ||
+    sessionSettings.transcriptionModel ||
+    DEFAULT_SETTINGS.transcriptionModel;
+  const rawInstructions = formData.get('instructions');
+  const instructions =
+    (typeof rawInstructions === 'string' && rawInstructions.trim()) ||
+    sessionSettings.instructions ||
+    DEFAULT_SETTINGS.instructions;
+  const turnType = formData.get('turnType') || sessionSettings.turnDetection.type || DEFAULT_SETTINGS.turnDetection.type;
+  const prefixPadding = parseNonNegativeInt(
+    formData.get('prefixPadding'),
+    sessionSettings.turnDetection.prefixPaddingMs ?? DEFAULT_SETTINGS.turnDetection.prefixPaddingMs
+  );
+  const silenceDuration = parseNonNegativeInt(
+    formData.get('silenceDuration'),
+    sessionSettings.turnDetection.silenceDurationMs ?? DEFAULT_SETTINGS.turnDetection.silenceDurationMs
+  );
+  const interruptResponse = formData.get('interruptResponse') === 'on';
+  const autoCommit = parseNonNegativeInt(
+    formData.get('autoCommit'),
+    sessionSettings.autoCommitThresholdMs ?? DEFAULT_SETTINGS.autoCommitThresholdMs
+  );
+
+  sessionSettings = {
+    model,
+    transcriptionModel,
+    instructions,
+    turnDetection: {
+      type: turnType,
+      interruptResponse,
+      prefixPaddingMs: prefixPadding,
+      silenceDurationMs: silenceDuration,
+    },
+    autoCommitThresholdMs: autoCommit,
+  };
+}
+
+function buildSessionConfiguration() {
+  const { model, instructions, transcriptionModel, turnDetection } = sessionSettings;
+  const audioInput = {};
+
+  if (transcriptionModel) {
+    audioInput.transcription = { model: transcriptionModel };
+  }
+
+  if (turnDetection?.type === 'server_vad') {
+    audioInput.turn_detection = {
+      type: 'server_vad',
+      interrupt_response: Boolean(turnDetection.interruptResponse),
+      prefix_padding_ms: turnDetection.prefixPaddingMs,
+      silence_duration_ms: turnDetection.silenceDurationMs,
+    };
+  } else {
+    audioInput.turn_detection = null;
+  }
+
+  return {
+    type: 'realtime',
+    model,
+    output_modalities: ['text'],
+    instructions,
+    audio: {
+      input: audioInput,
+    },
+  };
+}
+
+function applySettingsToActiveSession() {
+  if (!dc || dc.readyState !== 'open') {
+    return;
+  }
+  sendRealtimeEvent({
+    type: 'session.update',
+    session: buildSessionConfiguration(),
+  });
+  if (isRunning) {
+    setStatus('Settings updated.');
+  }
+}
+
+function updateTurnDetectionFieldState() {
+  if (!turnTypeSelect) {
+    return;
+  }
+  const disabled = turnTypeSelect.value === 'none';
+  prefixPaddingInput.disabled = disabled;
+  silenceDurationInput.disabled = disabled;
+  interruptResponseInput.disabled = disabled;
+}
+
 function resetDisplays() {
   panels.translation.reset();
   panels.transcription.reset();
@@ -128,13 +282,14 @@ function clearAutoCommitTimer() {
 }
 
 function scheduleAutoCommitTimer() {
+  if (!sessionSettings.autoCommitThresholdMs) return;
   autoCommitTimer = window.setTimeout(() => {
     if (window?.console?.debug) {
       console.debug('input_audio_buffer.commit (auto)');
     }
     sendRealtimeEvent({ type: 'input_audio_buffer.commit' });
     scheduleAutoCommitTimer();
-  }, AUTO_COMMIT_THRESHOLD_MS);
+  }, sessionSettings.autoCommitThresholdMs);
 }
 
 function handleServerEvent(event) {
@@ -270,7 +425,7 @@ async function startSession() {
 
   let ephemeralKey;
   try {
-    ephemeralKey = await mintEphemeralKey(apiKey);
+    ephemeralKey = await mintEphemeralKey(apiKey, sessionSettings.model);
   } catch (err) {
     safeConsoleError(err);
     resetUiAfterFailure(err.message || 'Failed to mint ephemeral token.');
@@ -316,29 +471,7 @@ async function startSession() {
     dc = pc.createDataChannel('oai-events');
     dc.addEventListener('message', handleServerEvent);
     dc.addEventListener('open', () => {
-      // Ensure the session sticks to text output and translation instructions.
-      sendRealtimeEvent({
-        type: 'session.update',
-        session: {
-          type: 'realtime',
-          model: 'gpt-realtime',
-          output_modalities: ['text'],
-          audio: {
-            input: {
-              transcription: {
-                model: 'gpt-4o-transcribe'
-              },
-              turn_detection: {
-                type: 'server_vad',
-                interrupt_response: false,
-                prefix_padding_ms: 100,
-                silence_duration_ms: 100,
-              }
-            }
-          },
-          instructions: TRANSLATOR_PROMPT,
-        }
-      });
+      applySettingsToActiveSession();
       setStatus('Session ready — listening…');
       showPanels(panels.transcription, panels.translation);
     });
@@ -387,7 +520,7 @@ async function assertOk(response) {
   throw new Error((await readError(response)) || `OpenAI API error (${response.status})`);
 }
 
-async function mintEphemeralKey(apiKey) {
+async function mintEphemeralKey(apiKey, model) {
   const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
     method: 'POST',
     headers: {
@@ -397,7 +530,7 @@ async function mintEphemeralKey(apiKey) {
     body: JSON.stringify({
       session: {
         type: 'realtime',
-        model: 'gpt-realtime'
+        model
 	  }
     }),
   });
@@ -485,5 +618,36 @@ toggleBtn.addEventListener('click', () => {
   }
 });
 
+settingsBtn?.addEventListener('click', () => {
+  openSettings();
+});
+
+settingsDialog?.addEventListener('click', (event) => {
+  if (event.target?.dataset?.dismiss !== undefined) {
+    closeSettings();
+  }
+});
+
+[...settingsDialog?.querySelectorAll('[data-dismiss]') || []].forEach((element) => {
+  element.addEventListener('click', closeSettings);
+});
+
+settingsForm?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const formData = new FormData(settingsForm);
+  updateSessionSettingsFromForm(formData);
+  closeSettings();
+  applySettingsToActiveSession();
+});
+
+turnTypeSelect?.addEventListener('change', updateTurnDetectionFieldState);
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && settingsDialog && !settingsDialog.hidden) {
+    closeSettings();
+  }
+});
+
 resetDisplays();
 setStatus('Idle');
+populateSettingsForm();

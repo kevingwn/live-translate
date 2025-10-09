@@ -17,7 +17,10 @@
         <span>OpenAI API key</span>
         <input id="apiKey" type="password" inputmode="text" autocomplete="off" placeholder="sk-..." aria-label="OpenAI API key">
       </label>
-      <button id="toggle" type="button">Start listening</button>
+      <div class="control-actions">
+        <button id="settings" type="button" class="button--ghost">Settings</button>
+        <button id="toggle" type="button">Start listening</button>
+      </div>
       <p id="status" class="status status--inline">Idle</p>
     </section>
     <section class="output">
@@ -32,6 +35,76 @@
       <p>Your API key mints a short-lived token in your browser. No audio or text is stored or sent anywhere else.</p>
     </footer>
   </main>
+  <div id="settingsDialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+    <div class="modal__backdrop" data-dismiss></div>
+    <div class="modal__panel" role="document">
+      <form id="settingsForm" class="modal__form">
+        <header class="modal__header">
+          <h2 id="settingsTitle">Session settings</h2>
+          <button type="button" class="modal__close button--ghost" data-dismiss aria-label="Close settings">Close</button>
+        </header>
+        <div class="modal__body">
+          <fieldset class="modal__section">
+            <legend>Models</legend>
+            <label class="field" for="modelSelect">
+              <span>Realtime response model</span>
+              <select id="modelSelect" name="model">
+                <option value="gpt-realtime">gpt-realtime</option>
+                <option value="gpt-realtime-mini">gpt-realtime-mini</option>
+              </select>
+            </label>
+            <label class="field" for="transcriptionModel">
+              <span>Transcription model</span>
+              <select id="transcriptionModel" name="transcriptionModel">
+                <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
+                <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+              </select>
+            </label>
+          </fieldset>
+          <fieldset class="modal__section">
+            <legend>Instructions</legend>
+            <label class="field" for="instructionText">
+              <span>System instructions</span>
+              <textarea id="instructionText" name="instructions" rows="5"></textarea>
+            </label>
+          </fieldset>
+          <fieldset class="modal__section">
+            <legend>Turn detection</legend>
+            <label class="field" for="turnType">
+              <span>Detection strategy</span>
+              <select id="turnType" name="turnType">
+                <option value="server_vad">Server VAD</option>
+                <option value="none">Disabled</option>
+              </select>
+            </label>
+            <label class="field field--split" for="prefixPadding">
+              <span>Prefix padding (ms)</span>
+              <input id="prefixPadding" name="prefixPadding" type="number" min="0" step="50">
+            </label>
+            <label class="field field--split" for="silenceDuration">
+              <span>Silence duration (ms)</span>
+              <input id="silenceDuration" name="silenceDuration" type="number" min="0" step="50">
+            </label>
+            <label class="field field--inline">
+              <input id="interruptResponse" name="interruptResponse" type="checkbox">
+              <span>Allow model to interrupt response on new speech</span>
+            </label>
+          </fieldset>
+          <fieldset class="modal__section">
+            <legend>Miscellaneous</legend>
+            <label class="field field--split" for="autoCommit">
+              <span>Auto commit (ms)</span>
+              <input id="autoCommit" name="autoCommit" type="number" min="0" step="500">
+            </label>
+          </fieldset>
+        </div>
+        <footer class="modal__footer">
+          <button type="button" class="button--ghost" data-dismiss>Cancel</button>
+          <button type="submit">Save changes</button>
+        </footer>
+      </form>
+    </div>
+  </div>
   <script type="module" src="app.js"></script>
 </body>
 </html>
