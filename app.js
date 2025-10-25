@@ -435,7 +435,7 @@ async function startSession() {
   setStatus('Ephemeral token acquired — requesting microphone…');
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 }, video: false });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: true, echoCancellation: false, noiseSuppression: false }, video: false });
   } catch (err) {
     safeConsoleError(err);
     resetUiAfterFailure('Microphone permission was denied.');
