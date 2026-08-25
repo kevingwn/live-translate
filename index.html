@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Translate</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src https://api.openai.com wss://api.openai.com; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <h1>Live Translate</h1>
+
+  <label class="field">
+    <span>Translate into</span>
+    <select id="lang">
+      <option value="es">Spanish</option>
+      <option value="pt">Portuguese</option>
+      <option value="fr">French</option>
+      <option value="ja">Japanese</option>
+      <option value="ru">Russian</option>
+      <option value="zh">Chinese</option>
+      <option value="de">German</option>
+      <option value="ko">Korean</option>
+      <option value="hi">Hindi</option>
+      <option value="id">Indonesian</option>
+      <option value="vi">Vietnamese</option>
+      <option value="it">Italian</option>
+      <option value="en">English</option>
+    </select>
+  </label>
+
+  <div class="spacer"></div>
+
+  <div class="meters" id="meters">
+    <button class="chip meters-toggle" id="meters-toggle" data-state="idle"
+            aria-expanded="false" aria-controls="meters-list">
+      <span id="meters-summary">0:00 &middot; $0.00</span>
+    </button>
+    <div class="meters-list" id="meters-list">
+      <span class="chip" id="chip-src" data-state="idle">source</span>
+      <span class="chip" id="chip-tgt" data-state="idle">target</span>
+      <span class="pill" id="lag" hidden></span>
+      <span class="pill" id="cost" title="Estimate at $0.034/min translate + $0.017/min transcribe. Excludes tier discounts and partial-minute rounding.">0:00 &middot; $0.00</span>
+    </div>
+  </div>
+
+  <button id="start" class="primary">Start</button>
+  <button id="stop" class="danger" hidden>Stop</button>
+</header>
+
+<main>
+  <section class="setup" id="setup">
+    <div class="grid">
+
+      <div class="card">
+        <h2>Your OpenAI key</h2>
+        <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..." aria-label="OpenAI API key">
+        <div class="row">
+          <label><input type="radio" name="store" value="none" checked> Don&rsquo;t remember</label>
+          <label><input type="radio" name="store" value="session"> This tab</label>
+          <label><input type="radio" name="store" value="local"> This device</label>
+        </div>
+        <button id="forget" class="link" hidden>Clear saved key</button>
+
+        <details class="disclose">
+          <summary>Where this key goes, and the risks</summary>
+          <p>The key is sent only to <code>api.openai.com</code>, direct from your browser. There is no
+             server in this app and nothing is logged anywhere.</p>
+          <p>It is held in page memory while the app runs, so any script injected into this page could
+             read it. There are no third-party scripts, no fonts or analytics from other origins, and a
+             Content-Security-Policy that permits network calls to OpenAI only.</p>
+          <p><strong>If you pick &ldquo;This device&rdquo;, read this.</strong> Every project published under
+             <code>yourname.github.io</code> shares one browser origin, so any other page you have ever
+             hosted there can read the saved key. That is why &ldquo;Don&rsquo;t remember&rdquo; is the
+             default. A custom domain or a dedicated account avoids it.</p>
+          <p>The CSP stops a third party being contacted, but someone who managed to inject script could
+             still exfiltrate through OpenAI itself. The real mitigation is scope: create a dedicated
+             project, issue a key with a spend limit, and revoke it when you are done.
+             <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Manage keys</a></p>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Audio source</h2>
+        <div class="row">
+          <label><input type="radio" name="src" value="mic" checked> Microphone</label>
+          <label><input type="radio" name="src" value="display"> Shared tab</label>
+          <label><input type="radio" name="src" value="file"> Audio file</label>
+        </div>
+
+        <p class="hint" id="src-unsupported" hidden></p>
+
+        <div id="mic-opts">
+          <select id="device" aria-label="Input device"><option value="">Default input</option></select>
+        </div>
+
+        <div id="display-opts" hidden>
+          <p class="hint">Chrome asks what to share when you press Start.
+             <strong>Tick &ldquo;Share tab audio&rdquo;</strong> &mdash; or &ldquo;Share system
+             audio&rdquo; if you pick a whole screen. It is easy to miss, and without it the capture
+             is completely silent.</p>
+          <p class="hint">Sharing a single <em>window</em> cannot capture audio on Windows. Choose a
+             tab or the entire screen. Chrome keeps a &ldquo;sharing&rdquo; bar on screen until you
+             stop; pressing Stop there also stops the transcript.</p>
+        </div>
+
+        <div id="file-opts" hidden>
+          <div class="drop" id="drop">
+            <input type="file" id="file" accept="audio/*" hidden>
+            <button id="pick" class="link">Choose an audio file</button>
+            <span> or drop one here</span>
+          </div>
+          <p class="hint" id="file-info" hidden></p>
+          <p class="hint">Played at normal speed, exactly as if spoken. These are realtime models, so
+             there is no fast-forward.</p>
+        </div>
+
+        <div id="level-wrap">
+          <div class="level"><i id="level"></i></div>
+          <p class="hint">The bar moves while audio is arriving. If it stays flat once you are live,
+             nothing is reaching the page &mdash; check the source is actually playing, or that you
+             ticked the audio box when sharing.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Source caption accuracy</h2>
+        <p class="hint">The translator accepts no glossary, so the source transcript comes from a
+           second pass that does. Both run at once and both cost money.</p>
+        <label class="field"><span>Topic</span>
+          <input id="prompt" type="text" placeholder="A support call about the premium plan">
+        </label>
+        <label class="field"><span>Keywords</span>
+          <input id="keywords" type="text" placeholder="AC-42, premium plan, billing">
+        </label>
+        <p class="hint">Topic measurably helps with names and part numbers. Keywords are accepted by
+           the API but never echoed back in the session, and made no difference in testing &mdash;
+           put your jargon in Topic.</p>
+        <label class="field"><span>Expected languages</span>
+          <input id="languages" type="text" placeholder="en, fr">
+        </label>
+        <label class="field"><span>Latency</span>
+          <select id="delay">
+            <option value="minimal">minimal</option>
+            <option value="low" selected>low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="xhigh">xhigh</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="card">
+        <h2>Spending guard</h2>
+        <label class="field"><span>Stop at</span>
+          <input id="budget" type="number" min="0.1" step="0.1" value="2.00">
+        </label>
+        <p class="hint">Runs stop automatically at this estimated spend, and after 60 minutes idle.
+           Billing is per minute of audio sent, so a forgotten tab costs money.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="stage" id="stage" hidden>
+    <div class="col">
+      <h2 id="src-title">Source</h2>
+      <div class="scroll" id="src-scroll"></div>
+      <button class="jump" id="src-jump" hidden>&darr; Jump to live</button>
+    </div>
+    <div class="col">
+      <h2 id="tgt-title">Translation</h2>
+      <div class="scroll" id="tgt-scroll"></div>
+      <button class="jump" id="tgt-jump" hidden>&darr; Jump to live</button>
+    </div>
+  </section>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <details class="diag">
+    <summary>Diagnostics</summary>
+    <div id="log" class="log"></div>
+  </details>
+</main>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

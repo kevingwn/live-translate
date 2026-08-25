@@ -1,0 +1,6 @@
+fixtures/
+*.pcm
+*.wav
+*.mp3
+.DS_Store
+__pycache__/

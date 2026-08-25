@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture player</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    background: #14141a; color: #ececea;
+    font: 16px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  p { color: #9d9b96; font-size: 14px; margin: 0; max-width: 46ch; text-align: center; }
+  select, button {
+    font: inherit; padding: 10px 16px; border-radius: 8px;
+    border: 1px solid #33333a; background: #1f1f23; color: inherit;
+  }
+  button { cursor: pointer; font-weight: 600; }
+  #play { background: #6ee7a8; color: #14141a; border-color: #6ee7a8; min-width: 150px; }
+  #state { font-variant-numeric: tabular-nums; color: #6ee7a8; min-height: 1.4em; }
+  label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #9d9b96; }
+</style>
+</head>
+<body>
+
+<h1>Fixture player</h1>
+<p>Plays a generated fixture out loud so another tab can capture it with
+   <code>getDisplayMedia</code>. Looping is on by default, so the clip keeps going while you work
+   through Chrome's share picker.</p>
+
+<select id="clip">
+  <option value="01-english-monologue">01 — English monologue (27s)</option>
+  <option value="02-spanish-monologue">02 — Spanish monologue (25s)</option>
+  <option value="03-code-switched">03 — Code-switched Spanglish (19s)</option>
+  <option value="04-jargon-and-acronyms">04 — Jargon and acronyms (20s)</option>
+</select>
+
+<label><input type="checkbox" id="loop" checked> Loop</label>
+<button id="play">Play</button>
+<div id="state">stopped</div>
+
+<audio id="audio"></audio>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  const audio = el('audio');
+
+  function load() {
+    audio.src = '../fixtures/' + el('clip').value + '.wav';
+    audio.loop = el('loop').checked;
+  }
+
+  el('play').addEventListener('click', async () => {
+    if (!audio.paused) { audio.pause(); return; }
+    load();
+    try {
+      await audio.play();
+    } catch (err) {
+      el('state').textContent = 'could not play: ' + err.message;
+    }
+  });
+
+  el('loop').addEventListener('change', () => { audio.loop = el('loop').checked; });
+  el('clip').addEventListener('change', () => { if (!audio.paused) { load(); audio.play(); } });
+
+  audio.addEventListener('play', () => { el('play').textContent = 'Pause'; });
+  audio.addEventListener('pause', () => { el('play').textContent = 'Play'; el('state').textContent = 'stopped'; });
+  audio.addEventListener('timeupdate', () => {
+    if (audio.paused) return;
+    const t = Math.floor(audio.currentTime);
+    el('state').textContent = 'playing  ' + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+  });
+
+  load();
+</script>
+</body>
+</html>
