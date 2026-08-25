@@ -196,7 +196,16 @@ export function createStreamSource({ kind, acquire, onFrame, onLevel, onError, o
 
     running = true;
     const settings = audioTracks[0].getSettings ? audioTracks[0].getSettings() : {};
-    return { sampleRate: ctx.sampleRate, trackRate: settings.sampleRate, channels: settings.channelCount };
+    return {
+      sampleRate: ctx.sampleRate,
+      trackRate: settings.sampleRate,
+      // What the track *claims*...
+      channels: settings.channelCount,
+      // ...versus what Web Audio actually delivers into the graph. These can
+      // disagree: getSettings() is advisory, and a display capture has been
+      // observed reporting 1 while the node negotiates something else.
+      graphChannels: src.channelCount,
+    };
   }
 
   async function stop() {

@@ -313,7 +313,8 @@ async function start() {
 
     const info = await source.start();
     log('source=' + source.kind + ' graph=' + info.sampleRate + 'Hz'
-        + (info.trackRate ? ' track=' + info.trackRate + 'Hz/' + (info.channels || '?') + 'ch' : ''));
+        + (info.trackRate ? ' track=' + info.trackRate + 'Hz/' + (info.channels || '?') + 'ch' : '')
+        + (info.graphChannels ? ' node=' + info.graphChannels + 'ch' : ''));
     if (source.kind === 'mic') refreshDevices();
   } catch (err) {
     notify(describeSourceError(source ? source.kind : sourceMode(), err));

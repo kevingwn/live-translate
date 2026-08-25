@@ -117,6 +117,51 @@ def synthesize(api_key: str, text: str, voice: str, fmt: str) -> bytes:
         return resp.read()
 
 
+def build_stereo_probe() -> str:
+    """Derive a STEREO clip with speech in the right channel only.
+
+    This is the decisive test for the capture downmix. AudioWorkletNode defaults
+    channelCountMode to 'max', which hands the processor every channel; code
+    that reads inputs[0][0] then silently transcribes the left channel alone.
+    With silence on the left, that bug produces an empty transcript, while a
+    correct (L+R)/2 downmix yields the speech at half amplitude.
+
+    Worth knowing: a display-captured track reports channelCount 1 from
+    getSettings() even when MediaStreamAudioSourceNode negotiates 2, so the
+    track metadata cannot be trusted to tell you whether stereo is in play.
+
+    Costs nothing -- it is built from the mono PCM already on disk.
+    """
+    import struct
+
+    mono = (OUT / "01-english-monologue.pcm").read_bytes()
+    samples = struct.unpack("<%dh" % (len(mono) // 2), mono)
+
+    body = bytearray()
+    for value in samples:
+        body += struct.pack("<hh", 0, value)   # left silent, right = speech
+
+    rate, block = 24000, 4
+    header = bytearray(44)
+    header[0:4] = b"RIFF"
+    header[4:8] = (36 + len(body)).to_bytes(4, "little")
+    header[8:12] = b"WAVE"
+    header[12:16] = b"fmt "
+    header[16:20] = (16).to_bytes(4, "little")
+    header[20:22] = (1).to_bytes(2, "little")
+    header[22:24] = (2).to_bytes(2, "little")
+    header[24:28] = rate.to_bytes(4, "little")
+    header[28:32] = (rate * block).to_bytes(4, "little")
+    header[32:34] = block.to_bytes(2, "little")
+    header[34:36] = (16).to_bytes(2, "little")
+    header[36:40] = b"data"
+    header[40:44] = len(body).to_bytes(4, "little")
+
+    name = "05-stereo-right-only.wav"
+    (OUT / name).write_bytes(bytes(header) + bytes(body))
+    return name
+
+
 def main() -> int:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
